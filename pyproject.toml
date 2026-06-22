@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "db-mcp"
+version = "0.1.0"
+description = "MCP server for multi-database access with LLM permission gating"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.0",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",   # PostgreSQL, included by default
+    # SQLite is built into Python, no extra dep needed
+]
+
+[project.optional-dependencies]
+oracle = ["oracledb>=2.0"]
+mysql = ["PyMySQL>=1.1"]
+mssql = ["pyodbc>=5.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+db-mcp = "db_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["db_mcp"]
