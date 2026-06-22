@@ -1,11 +1,18 @@
 # db-mcp
 
-MCP server for multi-database access with LLM-gated write permissions.
+MCP server that gives LLM agents read access to any database, with built-in gates for writes.
 
-- **Read queries** (SELECT, EXPLAIN, SHOW…) run instantly.
-- **Write/destructive queries** (INSERT, UPDATE, DELETE, DROP, ALTER…) require the LLM to show a preview and get explicit user confirmation before executing.
-- **Named connections** via `DB_<NAME>=<url>` env vars.
-- **Extensible**: any SQLAlchemy-compatible database. Install the driver, use the right URL.
+## Why db-mcp
+
+LLMs handle read-only database work: schema exploration, query writing, data analysis. A stray `DELETE` or `DROP` from an agent can wipe production data. db-mcp draws a hard line: reads go through, writes require the agent to show you exactly what it plans to do and wait for your explicit approval.
+
+## Features
+
+- **Read queries** run immediately: `SELECT`, `EXPLAIN`, `SHOW`, `DESCRIBE`, and `WITH` (when safe).
+- **Write and destructive queries** go through a two-step confirmation: the agent previews the change, you approve it.
+- **Token-bound execution.** Approval tokens encode the exact SQL and connection. Swap the query or target a different database, and the server rejects it.
+- **Named connections** via `DB_<NAME>=<url>` environment variables. No config files to manage.
+- **Any SQLAlchemy-compatible database:** PostgreSQL, SQLite, Oracle, MySQL, SQL Server, Snowflake, or whatever you install the driver for.
 
 ## Supported databases
 
@@ -16,38 +23,38 @@ MCP server for multi-database access with LLM-gated write permissions.
 | Oracle      | `oracle+oracledb://user:pass@host:1521/service`   | `[oracle]`             |
 | MySQL       | `mysql+pymysql://user:pass@host:3306/db`          | `[mysql]`              |
 | SQL Server  | `mssql+pyodbc://user:pass@host/db?driver=...`     | `[mssql]`              |
-| Any other   | Use the SQLAlchemy URL format + install the driver | custom                 |
+| Snowflake   | `snowflake://user:pass@account/db/schema`         | `snowflake-sqlalchemy` |
+
+Any other database works too. Install the right SQLAlchemy driver and use its URL format.
 
 ## Quick start
 
 ```bash
-# Clone / copy project
-cd db-mcp
-
-# Install (uv recommended)
+# Install
 uv sync
 
-# Extras
-uv pip install -e ".[oracle]"
-uv pip install -e ".[mysql]"
-
-# Test run
+# Run with a local SQLite database
 DB_LOCAL=sqlite:///./test.db uv run db-mcp
 ```
 
-## Configuration
+The server starts and your LLM tool can list tables, describe schemas, and run read queries against `local`.
 
-Set `DB_<NAME>=<url>` environment variables. The `<NAME>` part (lowercased) is
-what you reference in prompts: *"use the **prod** connection"*.
+## Configure your connections
+
+Set `DB_<NAME>=<url>` environment variables. The part after `DB_` (lowercased) is the name you reference in prompts.
 
 ```bash
-# .env
 DB_PROD=postgresql://user:pass@db.internal:5432/production
 DB_LOCAL=sqlite:///./dev.db
 DB_MAX_ROWS=1000   # optional, default 500
 ```
 
-## VS Code Copilot
+Put these in a `.env` file if you run the server manually.
+
+## Connect your IDE
+
+<details>
+<summary><strong>VS Code Copilot</strong></summary>
 
 Add to `.vscode/mcp.json` (workspace) or `~/.vscode/mcp.json` (global):
 
@@ -68,9 +75,12 @@ Add to `.vscode/mcp.json` (workspace) or `~/.vscode/mcp.json` (global):
 }
 ```
 
-## OpenCode
+</details>
 
-Add to `~/.config/opencode/config.json` (or `.opencode.json` in your project):
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+Add to `~/.config/opencode/config.json` or `.opencode.json` in your project:
 
 ```json
 {
@@ -88,7 +98,9 @@ Add to `~/.config/opencode/config.json` (or `.opencode.json` in your project):
 }
 ```
 
-## Available tools
+</details>
+
+## Tools
 
 | Tool               | Description                                              |
 |--------------------|----------------------------------------------------------|
@@ -96,28 +108,29 @@ Add to `~/.config/opencode/config.json` (or `.opencode.json` in your project):
 | `list_tables`      | List tables and views in a connection                    |
 | `describe_table`   | Show columns, PK, FKs, indexes for a table               |
 | `query`            | Execute read-only SQL (SELECT, EXPLAIN, etc.)            |
-| `preview_mutation` | Preview a write/destructive query → returns token        |
-| `execute_mutation` | Execute after user confirms (requires token from above)  |
+| `preview_mutation` | Preview a write/destructive query, get a confirmation token |
+| `execute_mutation` | Execute after you confirm (requires token from above)    |
 
-## How the confirmation flow works
+## How writes get approved
+
+Every write or destructive query follows the same flow:
 
 ```
-LLM calls preview_mutation(connection, sql)
-  → returns: preview + one-time token (expires in 5 min)
+Agent calls preview_mutation(connection, sql)
+  → Server returns a preview of the change + a one-time token (5-minute TTL)
 
-LLM shows preview to user:
+Agent shows you the preview:
   "This will DELETE 42 rows from orders. Do you confirm?"
 
-User says: "yes"
+You say yes.
 
-LLM calls execute_mutation(connection, sql, token)
-  → executes, consumes token
+Agent calls execute_mutation(connection, sql, token)
+  → Server validates the token, executes, and consumes it.
 ```
 
-The token encodes `(connection, sql, expiry)`. If the LLM tries to swap the SQL
-or use a different connection, the server rejects it. Tokens are single-use.
+The token binds the connection name and the exact SQL to the approval. If the agent tries to run different SQL or target a different connection, the server rejects the token. Tokens expire after 5 minutes and can only be used once.
 
-## Adding a custom driver
+## Custom drivers
 
 Install any SQLAlchemy-compatible driver and use its URL dialect:
 
@@ -129,7 +142,7 @@ uv pip install snowflake-sqlalchemy
 DB_SNOW=snowflake://user:pass@account/database/schema
 ```
 
-The SQLAlchemy dialect registry resolves the driver.
+The SQLAlchemy dialect registry resolves the driver from the URL prefix.
 
 ## Environment reference
 
@@ -137,3 +150,11 @@ The SQLAlchemy dialect registry resolves the driver.
 |----------------|---------|--------------------------------------------------|
 | `DB_<NAME>`    | —       | Connection URL for a named database              |
 | `DB_MAX_ROWS`  | `500`   | Max rows returned per `query` call               |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, and PR guidelines.
+
+## License
+
+[GPL-3.0](LICENSE)
