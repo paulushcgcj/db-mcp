@@ -30,11 +30,12 @@ Any other database works too. Install the right SQLAlchemy driver and use its UR
 ## Quick start
 
 ```bash
-# Install
-uv sync
+# Clone the repo
+git clone git@github.com:paulushcgcj/db-mcp.git
+cd db-mcp
 
 # Run with a local SQLite database
-DB_LOCAL=sqlite:///./test.db uv run db-mcp
+DB_LOCAL=sqlite:///./test.db ./run.sh
 ```
 
 The server starts and your LLM tool can list tables, describe schemas, and run read queries against `local`.
@@ -51,6 +52,20 @@ DB_MAX_ROWS=1000   # optional, default 500
 
 Put these in a `.env` file if you run the server manually.
 
+## Run the server
+
+`run.sh` is the recommended launcher. It syncs dependencies, detects which database drivers your `DB_*` env vars need, installs them if missing, and hands off to the MCP server.
+
+```bash
+# Run manually
+DB_LOCAL=sqlite:///./test.db ./run.sh
+
+# Or with a .env file
+./run.sh
+```
+
+When your IDE launches db-mcp, point it at `run.sh` instead of calling `uv run db-mcp` directly. The script handles driver installation so you don't have to `pip install` extras like `[oracle]` or `[mysql]` by hand.
+
 ## Connect your IDE
 
 <details>
@@ -63,8 +78,7 @@ Add to `.vscode/mcp.json` (workspace) or `~/.vscode/mcp.json` (global):
   "servers": {
     "db-mcp": {
       "type": "stdio",
-      "command": "uv",
-      "args": ["run", "--project", "/absolute/path/to/db-mcp", "db-mcp"],
+      "command": "/absolute/path/to/db-mcp/run.sh",
       "env": {
         "DB_PROD": "postgresql://user:pass@host:5432/mydb",
         "DB_LOCAL": "sqlite:///./local.db",
@@ -80,14 +94,14 @@ Add to `.vscode/mcp.json` (workspace) or `~/.vscode/mcp.json` (global):
 <details>
 <summary><strong>OpenCode</strong></summary>
 
-Add to `~/.config/opencode/config.json` or `.opencode.json` in your project:
+Add to `~/.config/opencode/opencode.jsonc` or `.opencode.json` in your project:
 
 ```json
 {
   "mcp": {
     "db-mcp": {
       "type": "local",
-      "command": ["uv", "run", "--project", "/absolute/path/to/db-mcp", "db-mcp"],
+      "command": ["/absolute/path/to/db-mcp/run.sh"],
       "environment": {
         "DB_PROD": "postgresql://user:pass@host:5432/mydb",
         "DB_LOCAL": "sqlite:///./local.db",
@@ -132,14 +146,12 @@ The token binds the connection name and the exact SQL to the approval. If the ag
 
 ## Custom drivers
 
-Install any SQLAlchemy-compatible driver and use its URL dialect:
+`run.sh` detects the URL scheme and installs the driver for you. For example, setting `DB_SNOW=snowflake://...` causes the script to install `snowflake-sqlalchemy` on first launch.
+
+If you prefer to install manually:
 
 ```bash
-# Example: Snowflake
 uv pip install snowflake-sqlalchemy
-
-# Then set:
-DB_SNOW=snowflake://user:pass@account/database/schema
 ```
 
 The SQLAlchemy dialect registry resolves the driver from the URL prefix.
